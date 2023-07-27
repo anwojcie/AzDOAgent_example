@@ -1,0 +1,117 @@
+
+trigger: 
+  batch: true
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - simpleAgent/**
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+    #general
+  - name: ServiceConnection
+    value: 
+  - name: location
+    value: 'West Europe'
+  - name: virtual_network_resource_group_name
+    value: 'existing'
+  - name: virtual_network_name
+    value: 'existing'
+  - name: virtual_network_subnet_name
+    value: 'existing'
+  - name: vm_sku
+    value: 'Standard_D4s_v3'
+    # Packer
+  - name: managed_image_resource_group_name
+    value: 'existing'
+  - name: managed_image_name_prefix
+    value: 'AzDO_Agent_linux'
+    #for terraform
+  - name: TargetSubscriptionID
+    value: 
+  - name: BackendStorage_subscription_id
+    value: 
+  - name: BackendStorage_resource_group_name
+    value: 
+  - name: BackendStorage_storage_account_name
+    value: 
+  - name: BackendStorage_container_name
+    value: 
+  - name: BackendStorage_key
+    value: $(Build.Repository.Name).tfstate
+  - name: workingDirectory
+    value: simpleAgent/
+  - name: tfplanfilename
+    value: tfplan.tfplan
+
+stages:
+  - stage: SimpleAgent
+    jobs:
+      - job: PackAndDeploy
+        steps:
+          - task: AzureCLI@2
+            name: 'packer'
+            inputs:
+              azureSubscription: ${{ variables.ServiceConnection }}
+              addSpnToEnvironment: true
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                #https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs#argument-reference
+                $env:PKR_VAR_clientid="$($env:servicePrincipalId)"
+                $env:PKR_VAR_clientsecret="$($env:servicePrincipalKey)"
+                $env:PKR_VAR_tenantid="$($env:tenantId)"
+                $env:PKR_VAR_subscriptionid="${{ variables.TargetSubscriptionID }}"
+                packer init .pkr.hcl
+                packer validate .pkr.hcl
+                packer build -timestamp-ui -force .pkr.hcl 
+                cat manifest.json
+                Write-Host "##vso[artifact.upload containerfolder=packerresult;artifactname=packerresult]$((Get-Item ./manifest.json).FullName)"
+                Write-Host "##vso[task.setvariable variable=managed_image_id;issecret=false]$(jq -r '.builds[-1].artifact_id' manifest.json)"
+              workingDirectory: ${{ variables.workingDirectory }}/packer
+            env:
+              PKR_VAR_location: ${{ variables.location }}
+              PKR_VAR_virtual_network_resource_group_name: ${{ variables.virtual_network_resource_group_name }}
+              PKR_VAR_virtual_network_name: ${{ variables.virtual_network_name }}
+              PKR_VAR_virtual_network_subnet_name: ${{ variables.virtual_network_subnet_name }}
+              PKR_VAR_private_virtual_network_with_public_ip: true
+              PKR_VAR_managed_image_resource_group_name: ${{ variables.managed_image_resource_group_name }}
+              PKR_VAR_managed_image_name_prefix: ${{ variables.managed_image_name_prefix }}
+              PKR_VAR_vm_sku: ${{ variables.vm_sku }}
+          - task: AzureCLI@2
+            name: 'tf_init_plan'
+            inputs:
+              azureSubscription: ${{ variables.ServiceConnection }}
+              addSpnToEnvironment: true
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                #https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs#argument-reference
+                $env:ARM_CLIENT_ID="$($env:servicePrincipalId)"
+                $env:ARM_CLIENT_SECRET="$($env:servicePrincipalKey)"
+                $env:ARM_TENANT_ID="$($env:tenantId)"
+                $env:ARM_SUBSCRIPTION_ID="${{ variables.TargetSubscriptionID }}"
+                $env:ARM_STORAGE_USE_AZUREAD=true
+                #$env:TF_LOG="TRACE"
+
+                Write-Verbose 'Executing Terraform init' -Verbose
+                terraform init `
+                  -backend-config=subscription_id="${{ variables.BackendStorage_subscription_id }}" `
+                  -backend-config=resource_group_name="${{ variables.BackendStorage_resource_group_name }}" `
+                  -backend-config=storage_account_name="${{ variables.BackendStorage_storage_account_name }}" `
+                  -backend-config=container_name="${{ variables.BackendStorage_container_name }}" `
+                  -backend-config=key="${{ variables.BackendStorage_key }}"  
+                if ($LASTEXITCODE -eq 1){throw "terraform init: failed"}
+                terraform plan -input=false -out="${{ variables.tfplanfilename }}"
+              workingDirectory: ${{ variables.workingDirectory }}/tfcode
+            env:
+              TF_VAR_managed_image_id: $(managed_image_id)
+              TF_VAR_virtual_network_resource_group_name: ${{ variables.virtual_network_resource_group_name }}
+              TF_VAR_virtual_network_name: ${{ variables.virtual_network_name }}
+              TF_VAR_virtual_network_subnet_name: ${{ variables.virtual_network_subnet_name }}
+              TF_VAR_vm_sku: ${{ variables.vm_sku }}
+
