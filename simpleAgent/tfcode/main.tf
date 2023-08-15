@@ -57,7 +57,9 @@ resource "azurerm_linux_virtual_machine_scale_set" "example" {
   location            = data.azurerm_resource_group.existing.location
   sku                 = var.vm_sku
   instances           = 0
-
+  single_placement_group = false
+  overprovision          = false
+  
   admin_username = "adminuser"
 
   admin_ssh_key {
