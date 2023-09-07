@@ -10,6 +10,8 @@ wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor > /usr/share/key
 gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint
 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 apt-get -y install terraform
+#install packer
+sudo apt-get update && sudo apt-get install packer
 
 # install az cli https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt#option-1-install-with-one-command
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
