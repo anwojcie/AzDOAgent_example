@@ -60,6 +60,8 @@ source "azure-arm" "azurevm" {
   managed_image_resource_group_name = var.managed_image_resource_group_name
   managed_image_name = "${var.managed_image_name_prefix}_${local.timestamp}"
 
+  build_resource_group_name = var.managed_image_resource_group_name
+
   os_type = "Linux"
   image_publisher = "Canonical"
   image_offer = "0001-com-ubuntu-server-jammy"
